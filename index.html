@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Medical Dictation App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    textarea { width: 100%; height: 200px; font-size: 16px; padding: 10px; }
+    .controls { margin: 20px 0; }
+    .status { font-weight: bold; margin-top: 10px; }
+    label { display: block; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+
+  <h1>Radiology Dictation App</h1>
+
+  <div class="controls">
+    <label for="noise-level">Noise Cancellation Level: <span id="noise-level-label">5</span></label>
+    <input type="range" id="noise-level" min="1" max="10" value="5">
+  </div>
+
+  <button id="start-btn">Start Dictation</button>
+  <button id="stop-btn">Stop</button>
+  <div class="status" id="status">Not Listening</div>
+
+  <textarea id="transcript" placeholder="Your dictation appears here..."></textarea>
+
+  <script>
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const status = document.getElementById('status');
+    const transcriptEl = document.getElementById('transcript');
+    const noiseSlider = document.getElementById('noise-level');
+    const noiseLabel = document.getElementById('noise-level-label');
+
+    let recognition;
+    if ('webkitSpeechRecognition' in window) {
+      recognition = new webkitSpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        status.textContent = 'Listening...';
+      };
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          finalTranscript += event.results[i][0].transcript;
+        }
+
+        // Example: radiology term enhancer (simple highlight logic)
+        const medicalTerms = ['pulmonary', 'nodule', 'lesion', 'CT', 'MRI', 'effusion', 'mass', 'contrast'];
+        medicalTerms.forEach(term => {
+          const regex = new RegExp(`\\b(${term})\\b`, 'gi');
+          finalTranscript = finalTranscript.replace(regex, '[MED:$1]');
+        });
+
+        transcriptEl.value = finalTranscript;
+      };
+
+      recognition.onerror = (e) => {
+        status.textContent = `Error: ${e.error}`;
+      };
+
+      recognition.onend = () => {
+        status.textContent = 'Stopped Listening';
+      };
+    } else {
+      alert('Speech Recognition not supported on this device/browser.');
+    }
+
+    startBtn.onclick = () => recognition?.start();
+    stopBtn.onclick = () => recognition?.stop();
+
+    noiseSlider.oninput = () => {
+      noiseLabel.textContent = noiseSlider.value;
+      // In future: pass this value to real noise reduction system
+    };
+  </script>
+</body>
+</html>
