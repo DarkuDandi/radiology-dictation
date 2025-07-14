@@ -10,7 +10,6 @@
     .controls { margin: 20px 0; }
     .status { font-weight: bold; margin-top: 10px; }
     label { display: block; margin-bottom: 5px; }
-    #assessment { margin-top: 10px; padding: 10px; background: #eef; border-left: 4px solid #66f; }
   </style>
 </head>
 <body>
@@ -28,58 +27,55 @@
 
   <textarea id="transcript" placeholder="Your dictation appears here..."></textarea>
 
-  <button id="analyze-btn">AI Assess Text</button>
-  <div id="assessment">Assessment will appear here...</div>
-
   <script>
-    const startBtn = document.getElementById('start-btn');
-    const stopBtn = document.getElementById('stop-btn');
+    const apiKey = "f6fae805-4ff1-448b-9085-32e2ff4c94ae"; // Your API key
     const transcriptEl = document.getElementById('transcript');
-    const status = document.getElementById('status');
+    const statusEl = document.getElementById('status');
     const noiseSlider = document.getElementById('noise-level');
     const noiseLabel = document.getElementById('noise-level-label');
-    const assessBtn = document.getElementById('analyze-btn');
-    const assessmentEl = document.getElementById('assessment');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
 
     let recognition;
     let isListening = false;
+    let finalText = "";
 
+    // Initialize recognition
     if ('webkitSpeechRecognition' in window) {
       recognition = new webkitSpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
-      let finalText = "";
-
       recognition.onstart = () => {
         isListening = true;
-        status.textContent = 'Listening...';
+        statusEl.textContent = '🎙️ Listening...';
       };
 
-      recognition.onresult = (event) => {
+      recognition.onerror = (event) => {
+        statusEl.textContent = `❌ Error: ${event.error}`;
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        statusEl.textContent = '⏹️ Stopped Listening';
+      };
+
+      recognition.onresult = async (event) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalText += autoPunctuate(transcript.trim()) + " ";
+            const processed = await processSentence(transcript.trim());
+            finalText += processed + " ";
           } else {
             interim = transcript;
           }
         }
         transcriptEl.value = finalText + ' [' + interim + ']';
       };
-
-      recognition.onerror = (e) => {
-        status.textContent = `Error: ${e.error}`;
-      };
-
-      recognition.onend = () => {
-        isListening = false;
-        status.textContent = 'Stopped Listening';
-      };
     } else {
-      alert('Speech Recognition not supported on this device/browser.');
+      alert('Speech Recognition not supported in this browser.');
     }
 
     startBtn.onclick = () => {
@@ -94,39 +90,29 @@
       noiseLabel.textContent = noiseSlider.value;
     };
 
-    assessBtn.onclick = () => {
-      const text = transcriptEl.value;
-      const issues = [];
+    async function processSentence(text) {
+      text = text.charAt(0).toUpperCase() + text.slice(1);
+      if (!/[.?!]$/.test(text)) text += '.';
 
-      // Simple AI-like check logic
-      if (!text.toLowerCase().includes("impression")) issues.push("Missing 'Impression' section.");
-      if (text.split('.').length < 3) issues.push("Too short — might lack detail.");
-      if (!text.match(/\d+ ?(mm|cm|ml)/)) issues.push("No measurements found.");
-      if (text.length > 1200) issues.push("Very long — consider summarizing.");
-      if (issues.length === 0) {
-        assessmentEl.textContent = "✅ Text appears well-formed and medically complete.";
-      } else {
-        assessmentEl.innerHTML = "⚠️ Issues found:<ul>" + issues.map(i => `<li>${i}</li>`).join('') + "</ul>";
+      const words = text.split(/\s+/);
+      const result = await Promise.all(words.map(async word => {
+        const cleanWord = word.replace(/[.,!?]/g, '');
+        const isValid = await validateTermOnline(cleanWord);
+        return isValid ? `**${word}**` : word;
+      }));
+      return result.join(' ');
+    }
+
+    async function validateTermOnline(term) {
+      const url = `https://data.bioontology.org/search?q=${encodeURIComponent(term)}&ontologies=RADLEX&apikey=${apiKey}`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        return data.collection && data.collection.length > 0;
+      } catch (e) {
+        console.error("Error validating term:", term, e);
+        return false;
       }
-    };
-
-    function autoPunctuate(sentence) {
-      // Capitalize and add basic punctuation
-      sentence = sentence.trim();
-      if (!sentence) return '';
-      let punctuated = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-      if (!punctuated.endsWith('.') && !punctuated.endsWith('!') && !punctuated.endsWith('?')) {
-        punctuated += '.';
-      }
-
-      // Medical term emphasis (non-destructive)
-      const medicalTerms = ['pulmonary', 'nodule', 'lesion', 'CT', 'MRI', 'effusion', 'atelectasis', 'consolidation', 'pleural', 'contrast', 'edema', 'enhancement', 'mass', 'hyperintense', 'hypodense'];
-      medicalTerms.forEach(term => {
-        const regex = new RegExp(`\\b(${term})\\b`, 'gi');
-        punctuated = punctuated.replace(regex, '**$1**'); // Markdown-style emphasis
-      });
-
-      return punctuated;
     }
   </script>
 </body>
