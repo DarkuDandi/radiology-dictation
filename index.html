@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Medical Dictation App</title>
+  <title>Radiology Dictation App</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
@@ -10,6 +10,7 @@
     .controls { margin: 20px 0; }
     .status { font-weight: bold; margin-top: 10px; }
     label { display: block; margin-bottom: 5px; }
+    #assessment { margin-top: 10px; padding: 10px; background: #eef; border-left: 4px solid #66f; }
   </style>
 </head>
 <body>
@@ -27,39 +28,46 @@
 
   <textarea id="transcript" placeholder="Your dictation appears here..."></textarea>
 
+  <button id="analyze-btn">AI Assess Text</button>
+  <div id="assessment">Assessment will appear here...</div>
+
   <script>
     const startBtn = document.getElementById('start-btn');
     const stopBtn = document.getElementById('stop-btn');
-    const status = document.getElementById('status');
     const transcriptEl = document.getElementById('transcript');
+    const status = document.getElementById('status');
     const noiseSlider = document.getElementById('noise-level');
     const noiseLabel = document.getElementById('noise-level-label');
+    const assessBtn = document.getElementById('analyze-btn');
+    const assessmentEl = document.getElementById('assessment');
 
     let recognition;
+    let isListening = false;
+
     if ('webkitSpeechRecognition' in window) {
       recognition = new webkitSpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
+      let finalText = "";
+
       recognition.onstart = () => {
+        isListening = true;
         status.textContent = 'Listening...';
       };
 
       recognition.onresult = (event) => {
-        let finalTranscript = '';
+        let interim = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          finalTranscript += event.results[i][0].transcript;
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalText += autoPunctuate(transcript.trim()) + " ";
+          } else {
+            interim = transcript;
+          }
         }
-
-        // Example: radiology term enhancer (simple highlight logic)
-        const medicalTerms = ['pulmonary', 'nodule', 'lesion', 'CT', 'MRI', 'effusion', 'mass', 'contrast'];
-        medicalTerms.forEach(term => {
-          const regex = new RegExp(`\\b(${term})\\b`, 'gi');
-          finalTranscript = finalTranscript.replace(regex, '[MED:$1]');
-        });
-
-        transcriptEl.value = finalTranscript;
+        transcriptEl.value = finalText + ' [' + interim + ']';
       };
 
       recognition.onerror = (e) => {
@@ -67,19 +75,59 @@
       };
 
       recognition.onend = () => {
+        isListening = false;
         status.textContent = 'Stopped Listening';
       };
     } else {
       alert('Speech Recognition not supported on this device/browser.');
     }
 
-    startBtn.onclick = () => recognition?.start();
-    stopBtn.onclick = () => recognition?.stop();
+    startBtn.onclick = () => {
+      if (!isListening) recognition?.start();
+    };
+
+    stopBtn.onclick = () => {
+      if (isListening) recognition?.stop();
+    };
 
     noiseSlider.oninput = () => {
       noiseLabel.textContent = noiseSlider.value;
-      // In future: pass this value to real noise reduction system
     };
+
+    assessBtn.onclick = () => {
+      const text = transcriptEl.value;
+      const issues = [];
+
+      // Simple AI-like check logic
+      if (!text.toLowerCase().includes("impression")) issues.push("Missing 'Impression' section.");
+      if (text.split('.').length < 3) issues.push("Too short — might lack detail.");
+      if (!text.match(/\d+ ?(mm|cm|ml)/)) issues.push("No measurements found.");
+      if (text.length > 1200) issues.push("Very long — consider summarizing.");
+      if (issues.length === 0) {
+        assessmentEl.textContent = "✅ Text appears well-formed and medically complete.";
+      } else {
+        assessmentEl.innerHTML = "⚠️ Issues found:<ul>" + issues.map(i => `<li>${i}</li>`).join('') + "</ul>";
+      }
+    };
+
+    function autoPunctuate(sentence) {
+      // Capitalize and add basic punctuation
+      sentence = sentence.trim();
+      if (!sentence) return '';
+      let punctuated = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+      if (!punctuated.endsWith('.') && !punctuated.endsWith('!') && !punctuated.endsWith('?')) {
+        punctuated += '.';
+      }
+
+      // Medical term emphasis (non-destructive)
+      const medicalTerms = ['pulmonary', 'nodule', 'lesion', 'CT', 'MRI', 'effusion', 'atelectasis', 'consolidation', 'pleural', 'contrast', 'edema', 'enhancement', 'mass', 'hyperintense', 'hypodense'];
+      medicalTerms.forEach(term => {
+        const regex = new RegExp(`\\b(${term})\\b`, 'gi');
+        punctuated = punctuated.replace(regex, '**$1**'); // Markdown-style emphasis
+      });
+
+      return punctuated;
+    }
   </script>
 </body>
 </html>
